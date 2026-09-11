@@ -1,0 +1,21 @@
+apiVersion: 1
+
+providers:
+  - name: Network Telemetry Dashboards
+    orgId: 1
+    folder: "Network Telemetry"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    # false (not true): a provisioned dashboard must always reflect this
+    # file. With allowUiUpdates: true, a single UI-side save (e.g. editing
+    # one panel's query and clicking Apply/Save) persists into Grafana's
+    # internal DB and is never re-synced from disk again, so the file and
+    # what's actually rendered can silently diverge panel-by-panel - this
+    # was the root cause of the Bandwidth dashboard's utilization panel
+    # showing stale/broken queries while the bandwidth panel (apparently
+    # UI-edited separately) appeared fixed. false guarantees this file is
+    # re-applied in full on every provisioning scan.
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

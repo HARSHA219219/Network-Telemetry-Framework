@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-telemetry}
+      POSTGRES_USER: ${POSTGRES_USER:-telemetry_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-telemetry_user} -d ${POSTGRES_DB:-telemetry}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-telemetry}
+      POSTGRES_USER: ${POSTGRES_USER:-telemetry_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      BACKEND_HTTP_PORT: "8000"
+      BACKEND_GRPC_PORT: "50051"
+      THRESHOLDS_CONFIG_PATH: /app/config/thresholds.yaml
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    ports:
+      - "8000:8000"   # REST API + Swagger docs at /docs
+      - "50051:50051" # gRPC ingestion
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  collector:
+    build:
+      context: .
+      dockerfile: docker/collector.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      COLLECTOR_CONFIG_PATH: /app/config/collector.yaml
+      DEVICES_CONFIG_PATH: /app/config/devices.yaml
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # SNMP community strings for authorized devices, if collector.yaml
+      # mode: SNMP - set these in .env, never here. Example:
+      # SNMP_COMMUNITY_ROUTER_01: ${SNMP_COMMUNITY_ROUTER_01}
+    env_file:
+      - .env
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      # Passed to the provisioned Postgres datasource (grafana/provisioning/datasources/postgres.yml)
+      GF_TELEMETRY_DB_HOST: postgres:5432
+      GF_TELEMETRY_DB_NAME: ${POSTGRES_DB:-telemetry}
+      GF_TELEMETRY_DB_USER: ${POSTGRES_USER:-telemetry_user}
+      GF_TELEMETRY_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
+
+volumes:
+  postgres_data:
+  grafana_data:
