@@ -1,0 +1,26 @@
+# Collector runtime configuration.
+#
+# mode:
+#   SIMULATION -> collector/simulator/* generates synthetic samples.
+#                 No network access, no authorization needed. Default.
+#   SNMP       -> collector/snmp/* polls real devices over SNMPv2c.
+#                 Requires devices.yaml entries marked authorized: true
+#                 and SNMP_COMMUNITY_<DEVICE_ID> set in the environment.
+
+mode: SIMULATION
+
+collection_interval: 10        # seconds between polling rounds
+snmp_timeout_seconds: 2
+snmp_retries: 1
+
+grpc:
+  backend_host: localhost
+  backend_port: 50051
+  connect_timeout_seconds: 5
+  max_retries: 3
+  retry_backoff_seconds: 2
+
+latency:
+  mode: SIMULATION              # SIMULATION | ICMP (paired with collector mode, but kept independent)
+  probes_per_measurement: 4
+  timeout_seconds: 1
